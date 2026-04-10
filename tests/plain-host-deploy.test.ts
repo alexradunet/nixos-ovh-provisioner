@@ -88,7 +88,7 @@ describe("plain-host-deploy.sh", () => {
 			"bash",
 			[
 				"-lc",
-				`source "${deployScriptPath}"; build_deploy_flake "path:${repoRoot}" "ovh-vps-base" "plan-host" "/dev/vda"`,
+				`source "${deployScriptPath}"; build_deploy_flake "path:${repoRoot}" "ovh-vps-base" "plan-host" "/dev/vda" '$6$test$hash'`,
 			],
 			undefined,
 			repoRoot,
@@ -110,7 +110,7 @@ describe("plain-host-deploy.sh", () => {
 			"bash",
 			[
 				"-lc",
-				`source "${deployScriptPath}"; build_deploy_flake "path:${repoRoot}" "ovh-vps-base" "plan-host" "/dev/vda"`,
+				`source "${deployScriptPath}"; build_deploy_flake "path:${repoRoot}" "ovh-vps-base" "plan-host" "/dev/vda" '$6$test$hash'`,
 			],
 			undefined,
 			repoRoot,
@@ -120,6 +120,37 @@ describe("plain-host-deploy.sh", () => {
 		expect(result.stdout).not.toContain("nixpi.primaryUser");
 		expect(result.stdout).not.toContain("nixpi.security.ssh");
 		expect(result.stdout).not.toContain("initialHashedPassword");
+	});
+
+	it("includes the root password hash in the generated deploy flake", async () => {
+		const testHash = "$6$rounds=500000$testsalt$testhash";
+		const result = await run(
+			"bash",
+			[
+				"-lc",
+				`source "${deployScriptPath}"; build_deploy_flake "path:${repoRoot}" "ovh-vps-base" "plan-host" "/dev/vda" '${testHash}'`,
+			],
+			undefined,
+			repoRoot,
+		);
+
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).toContain("users.users.root.hashedPassword = lib.mkForce");
+	});
+
+	it("omits the root password statement when no hash is supplied to build_deploy_flake", async () => {
+		const result = await run(
+			"bash",
+			[
+				"-lc",
+				`source "${deployScriptPath}"; build_deploy_flake "path:${repoRoot}" "ovh-vps-base" "plan-host" "/dev/vda"`,
+			],
+			undefined,
+			repoRoot,
+		);
+
+		expect(result.exitCode).toBe(0);
+		expect(result.stdout).not.toContain("hashedPassword");
 	});
 
 	it("shows usage and exits non-zero when required arguments are missing", async () => {
@@ -134,7 +165,7 @@ describe("plain-host-deploy.sh", () => {
 			"bash",
 			[
 				"-lc",
-				`source "${deployScriptPath}"; build_deploy_flake "path:${repoRoot}" "ovh-vps-base" "ovh-vps-base" "/dev/vda"`,
+				`source "${deployScriptPath}"; build_deploy_flake "path:${repoRoot}" "ovh-vps-base" "ovh-vps-base" "/dev/vda" '$6$test$hash'`,
 			],
 			undefined,
 			repoRoot,
@@ -205,6 +236,7 @@ describe("plain-host-deploy.sh", () => {
 	});
 
 	it("builds a temporary deploy flake and forwards deterministic nixos-anywhere arguments", async () => {
+		const testHash = "$6$rounds=500000$testsalt$hashvalue";
 		const result = await runDeploy([
 			"--target-host",
 			"root@198.51.100.10",
@@ -212,6 +244,8 @@ describe("plain-host-deploy.sh", () => {
 			"/dev/nvme0n1",
 			"--hostname",
 			"bloom-eu-1",
+			"--root-password-hash",
+			testHash,
 			"--debug",
 			"--option",
 			"accept-flake-config",
@@ -240,6 +274,7 @@ describe("plain-host-deploy.sh", () => {
 			);
 			expect(generatedFlake).toContain('networking.hostName = lib.mkForce "bloom-eu-1";');
 			expect(generatedFlake).toContain('disko.devices.disk.main.device = lib.mkForce "/dev/nvme0n1";');
+			expect(generatedFlake).toContain("users.users.root.hashedPassword = lib.mkForce");
 			expect(generatedFlake).not.toContain("nixpi.primaryUser");
 			expect(generatedFlake).not.toContain("initialHashedPassword");
 		} finally {

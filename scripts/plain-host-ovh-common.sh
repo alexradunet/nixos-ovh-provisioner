@@ -29,16 +29,41 @@ escape_nix_string() {
 	printf '%s' "$value"
 }
 
+# generate_root_password_hash
+# Prints a SHA-512 crypt hash for a freshly generated random password.
+# Also logs the plaintext to stderr so the operator can record it.
+generate_root_password_hash() {
+	local plain_pass hash
+	plain_pass="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 20)"
+	hash="$(nix shell 'nixpkgs#mkpasswd' --command mkpasswd --method=sha-512 --rounds=500000 "$plain_pass" 2>/dev/null)"
+	if [[ -z "$hash" ]]; then
+		log "ERROR: could not generate root password hash (mkpasswd failed)"
+		return 1
+	fi
+	log "Generated root password for KVM console access: ${plain_pass}"
+	log "IMPORTANT: save this password — it will not be shown again"
+	printf '%s' "$hash"
+}
+
 build_deploy_flake() {
 	local repo_url="$1"
 	local base_attr="$2"
 	local hostname="$3"
 	local disk="$4"
+	local root_password_hash="${5:-}"
 	local nix_hostname=""
 	local nix_disk=""
+	local root_pw_stmt=""
 
 	nix_hostname="$(escape_nix_string "$hostname")"
 	nix_disk="$(escape_nix_string "$disk")"
+
+	if [[ -n "$root_password_hash" ]]; then
+		local nix_root_pw
+		nix_root_pw="$(escape_nix_string "$root_password_hash")"
+		root_pw_stmt="
+          users.users.root.hashedPassword = lib.mkForce \"${nix_root_pw}\";"
+	fi
 
 	cat <<EOF_FLAKE
 {
@@ -49,7 +74,7 @@ build_deploy_flake() {
       modules = [
         ({ lib, ... }: {
           networking.hostName = lib.mkForce "${nix_hostname}";
-          disko.devices.disk.main.device = lib.mkForce "${nix_disk}";
+          disko.devices.disk.main.device = lib.mkForce "${nix_disk}";${root_pw_stmt}
         })
       ];
     };
@@ -63,7 +88,8 @@ run_ovh_deploy() {
 	local disk="$2"
 	local hostname="$3"
 	local flake_ref="$4"
-	shift 4
+	local root_password_hash="${5:-}"
+	shift 5
 
 	local repo_ref=""
 	local base_attr=""
@@ -87,7 +113,11 @@ run_ovh_deploy() {
 	tmp_dir="$(mktemp -d)"
 	trap 'rm -rf "$tmp_dir"' RETURN
 
-	build_deploy_flake "$repo_url" "$base_attr" "$hostname" "$disk" > "$tmp_dir/flake.nix"
+	if [[ -z "$root_password_hash" ]]; then
+		root_password_hash="$(generate_root_password_hash)"
+	fi
+
+	build_deploy_flake "$repo_url" "$base_attr" "$hostname" "$disk" "$root_password_hash" > "$tmp_dir/flake.nix"
 
 	log "WARNING: destructive install to ${target_host} using disk ${disk}"
 	log "Using base configuration ${flake_ref} with target hostname ${hostname}"

@@ -6,14 +6,18 @@ source "${script_dir}/plain-host-ovh-common.sh"
 
 usage() {
 	cat <<'EOF_USAGE'
-Usage: plain-host-deploy --target-host root@IP --disk /dev/sdX [--flake .#ovh-vps-base] [--hostname HOSTNAME] [extra nixos-anywhere args...]
+Usage: plain-host-deploy --target-host root@IP --disk /dev/sdX [--flake .#ovh-vps-base] [--hostname HOSTNAME] [--root-password-hash HASH] [extra nixos-anywhere args...]
 
 Destructive plain NixOS base install for an OVH VPS in rescue mode.
 Optionally bootstrap NixPI afterward on the installed machine with nixpi-bootstrap-host.
 
+A root password is always set for OVH KVM console access. If --root-password-hash is not
+supplied, a random password is generated and its plaintext is printed to stderr. Save it.
+
 Examples:
   nix run .#plain-host-deploy -- --target-host root@198.51.100.10 --disk /dev/sda
   nix run .#plain-host-deploy -- --target-host root@198.51.100.10 --disk /dev/nvme0n1 --hostname bloom-eu-1
+  nix run .#plain-host-deploy -- --target-host root@198.51.100.10 --disk /dev/sda --root-password-hash '$6$...'
 EOF_USAGE
 }
 
@@ -22,6 +26,7 @@ main() {
 	local disk=""
 	local hostname="ovh-vps-base"
 	local flake_ref="${NIXPI_REPO_ROOT:-.}#ovh-vps-base"
+	local root_password_hash=""
 	local extra_args=()
 
 	while [[ $# -gt 0 ]]; do
@@ -40,6 +45,10 @@ main() {
 				;;
 			--hostname)
 				hostname="${2:?missing hostname}"
+				shift 2
+				;;
+			--root-password-hash)
+				root_password_hash="${2:?missing root password hash}"
 				shift 2
 				;;
 			--bootstrap-user|--bootstrap-user=*|--bootstrap-password-hash|--bootstrap-password-hash=*)
@@ -63,7 +72,7 @@ main() {
 		exit 1
 	fi
 
-	run_ovh_deploy "$target_host" "$disk" "$hostname" "$flake_ref" "${extra_args[@]}"
+	run_ovh_deploy "$target_host" "$disk" "$hostname" "$flake_ref" "$root_password_hash" "${extra_args[@]}"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
