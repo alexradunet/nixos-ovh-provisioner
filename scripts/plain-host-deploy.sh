@@ -12,7 +12,8 @@ Destructive plain NixOS base install for an OVH VPS in rescue mode.
 Optionally bootstrap NixPI afterward on the installed machine with nixpi-bootstrap-host.
 
 A root password is always set for OVH KVM console access. If --root-password-hash is not
-supplied, a random password is generated and its plaintext is printed to stderr. Save it.
+supplied, a random password is generated, its plaintext is printed to stderr, and it is also
+saved to a local root-only file in the current directory. Save it.
 
 Examples:
   nix run .#plain-host-deploy -- --target-host root@198.51.100.10 --disk /dev/sda
